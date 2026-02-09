@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Data outputs / reports
+*.log
+*.tmp
+outputs/
+reports/
+
+# Secrets (do NOT commit)
+secrets.toml
+.env

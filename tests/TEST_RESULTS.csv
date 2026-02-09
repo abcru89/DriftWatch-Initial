@@ -1,0 +1,7 @@
+test_id,description,expected,outcome,passed
+TC01,Load sample baseline and current from sample_data,Both datasets load successfully,Pass,True
+TC02,Drop duplicates and record cleaning log,Cleaning log shows duplicates removed,"Pass (baseline_dups=15, current_dups=15)",True
+TC03,Generate schema and missingness report,Schema table contains dtype and missingness fields,Pass,True
+TC04,Compute PSI drift screening and overall health,Drift list produced and health computed,"Pass (health=at risk, tier=significant, top_feature=shipping_days)",True
+TC05,Generate baseline vs current comparison report,Comparison table includes missingness and unique counts,Pass,True
+TC06,Compute outlier summary (IQR) and correlation matrix,Outlier table produced (correlation may be empty if <2 numeric cols),Pass (top_outlier_col=unit_price),True
