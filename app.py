@@ -26,7 +26,7 @@ from driftwatch.testing import run_self_tests
 APP_TITLE = "DriftWatch"
 st.set_page_config(page_title=f"{APP_TITLE} (v.2 ReprtPNGs)", layout="wide")
 
-st.title(f"{APP_TITLE} (Final Iteration)")
+st.title(f"{APP_TITLE} (v.2 ReprtPNGs)")
 st.caption("Data-side drift screening with PSI, selectable analysis methods, reports, and operator-style front door signals.")
 
 # Paths
