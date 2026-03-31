@@ -87,7 +87,7 @@ var blobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/ro
 var keyVaultSecretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
 
 resource raAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, uami.properties.principalId, 'AcrPull')
+  name: guid(resourceGroup().id, acr.id, uami.id, 'AcrPull')
   scope: acr
   properties: {
     roleDefinitionId: acrPullRole
@@ -97,7 +97,7 @@ resource raAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 resource raBlob 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(stg.id, uami.properties.principalId, 'BlobDataContributor')
+  name: guid(resourceGroup().id, stg.id, uami.id, 'BlobDataContributor')
   scope: stg
   properties: {
     roleDefinitionId: blobDataContributorRole
@@ -107,7 +107,7 @@ resource raBlob 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 resource raKv 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(kv.id, uami.properties.principalId, 'KeyVaultSecretsUser')
+  name: guid(resourceGroup().id, kv.id, uami.id, 'KeyVaultSecretsUser')
   scope: kv
   properties: {
     roleDefinitionId: keyVaultSecretsUserRole
