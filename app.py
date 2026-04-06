@@ -22,6 +22,25 @@ from driftwatch.analysis import (
 from driftwatch.reports import build_markdown_report, save_report_bundle
 from driftwatch.testing import run_self_tests
 
+# ------------------ States: Define Loaded persistent state ------------------
+def init_state():
+    defaults = {
+        "datasets_loaded": False,
+        "analysis_complete": False,
+        "baseline_raw": None,
+        "current_raw": None,
+        "baseline_clean": None,
+        "current_clean": None,
+        "drift_table": None,
+        "comparison_table": None,
+        "outlier_table": None,
+        "report_md": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init_state()
 
 APP_TITLE = "DriftWatch"
 st.set_page_config(page_title=f"{APP_TITLE} (v.2 ReprtPNGs)", layout="wide")
@@ -91,6 +110,15 @@ def dataset_loader(label: str):
 
 baseline_df, baseline_err = dataset_loader("Baseline")
 current_df, current_err = dataset_loader("Current")
+
+# Persist raw datasets and loader state
+if safe_df(baseline_df):
+    st.session_state["baseline_raw"] = baseline_df.copy()
+if safe_df(current_df):
+    st.session_state["current_raw"] = current_df.copy()
+
+st.session_state["datasets_loaded"] = safe_df(baseline_df) and safe_df(current_df)
+
 
 st.sidebar.markdown("---")
 st.sidebar.header("2) Cleaning and preprocessing")
@@ -254,12 +282,10 @@ with tab_dashboard:
         if current_err:
             st.error(f"Current error: {current_err}")
     else:
-        if not run_btn:
-            st.warning("Datasets loaded. Choose cleaning and analysis methods, then click Run analysis.")
-        else:
+        # Only compute when user clicks Run analysis
+        if run_btn:
             params = {"fill_value": fill_value, "iqr_k": iqr_k}
 
-            # Apply cleaning
             b_clean = baseline_df.copy()
             c_clean = current_df.copy()
 
@@ -271,7 +297,7 @@ with tab_dashboard:
             else:
                 c_clean, c_log = apply_cleaning_pipeline(c_clean, selected_steps, params=params)
 
-            # Store results in session state for Reports tab
+            # Save results FIRST
             st.session_state["b_clean"] = b_clean
             st.session_state["c_clean"] = c_clean
             st.session_state["b_log"] = b_log
@@ -281,23 +307,58 @@ with tab_dashboard:
             st.session_state["run_id"] = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
             st.session_state["run_ts"] = dt.datetime.now().isoformat(timespec="seconds")
 
-            # Always compute drift list if selected
             drift_list = []
             health, tier = ("unknown", "unknown")
             drift_df = pd.DataFrame()
+
             if "Drift screening (PSI)" in selected_analyses:
                 drift_list = compute_feature_drift(b_clean, c_clean)
                 health, tier = overall_health(drift_list)
                 if drift_list:
-                    drift_df = pd.DataFrame([{
-                        "feature": d.feature,
-                        "kind": d.kind,
-                        "psi": round(d.psi, 6),
-                        "severity": d.severity
-                    } for d in drift_list])
-                st.session_state["drift_df"] = drift_df
-                st.session_state["health"] = health
-                st.session_state["tier"] = tier
+                    drift_df = pd.DataFrame([
+                        {
+                            "feature": d.feature,
+                            "kind": d.kind,
+                            "psi": round(d.psi, 6),
+                            "severity": d.severity,
+                        }
+                        for d in drift_list
+                    ])
+
+            st.session_state["drift_df"] = drift_df
+            st.session_state["health"] = health
+            st.session_state["tier"] = tier
+
+            if "Baseline vs current comparison" in selected_analyses:
+                st.session_state["compare_df"] = compare_baseline_current(b_clean, c_clean)
+            else:
+                st.session_state["compare_df"] = None
+
+            if "Outlier summary (IQR)" in selected_analyses:
+                st.session_state["outlier_df"] = outlier_summary_iqr(c_clean, k=iqr_k)
+            else:
+                st.session_state["outlier_df"] = None
+
+            if "Correlation analysis (numeric)" in selected_analyses:
+                st.session_state["corr_df"] = correlation_matrix(c_clean)
+            else:
+                st.session_state["corr_df"] = None
+
+            st.session_state["analysis_complete"] = True
+
+        # Render SECOND, from saved state
+        if not st.session_state.get("analysis_complete", False):
+            st.warning("Datasets loaded. Choose cleaning and analysis methods, then click Run analysis.")
+        else:
+            b_clean = st.session_state["b_clean"]
+            c_clean = st.session_state["c_clean"]
+            b_log = st.session_state.get("b_log")
+            c_log = st.session_state.get("c_log")
+            drift_df = st.session_state.get("drift_df", pd.DataFrame())
+            health = st.session_state.get("health", "unknown")
+            tier = st.session_state.get("tier", "unknown")
+
+            # All the rest of the dashboard renderings must come after this comment or break visualizaitons
 
             # Front door summary (always visible)
             st.subheader("Front door")
@@ -356,26 +417,33 @@ with tab_dashboard:
                 comp = compare_baseline_current(b_clean, c_clean)
                 st.session_state["compare_df"] = comp
                 st.dataframe(comp, use_container_width=True, height=320)
+            else:
+                st.session_state["compare_df"] = None
 
             if "Outlier summary (IQR)" in selected_analyses:
                 st.subheader("Outlier summary (IQR)")
                 out_df = outlier_summary_iqr(c_clean, k=iqr_k)
                 st.session_state["outlier_df"] = out_df
                 st.dataframe(out_df, use_container_width=True, height=260)
+            else:
+                st.session_state["outlier_df"] = None
 
             if "Correlation analysis (numeric)" in selected_analyses:
                 st.subheader("Correlation analysis (numeric)")
                 corr = correlation_matrix(c_clean)
                 st.session_state["corr_df"] = corr
                 plot_corr_heatmap(corr, "Current data correlation matrix")
+            else:
+                st.session_state["corr_df"] = None
 
+            st.session_state["analysis_complete"] = True
             st.caption(f"Run timestamp: {st.session_state.get('run_ts', '')}")
 
 # Reports tab
 with tab_reports:
     st.markdown("### Generate and save reports")
     st.write("This tab develops report capability now. You can expand report content in Topic 8 without changing the core workflow.")
-    if "b_clean" not in st.session_state or "c_clean" not in st.session_state:
+    if not st.session_state.get("analysis_complete", False):
         st.info("Run analysis first to generate report content.")
     else:
         b_clean = st.session_state["b_clean"]
