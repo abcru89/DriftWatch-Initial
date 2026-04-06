@@ -42,6 +42,9 @@ def init_state():
 
 init_state()
 
+def safe_df(df: Optional[pd.DataFrame]) -> bool:
+    return df is not None and isinstance(df, pd.DataFrame) and df.shape[0] > 0 and df.shape[1] > 0
+
 APP_TITLE = "DriftWatch"
 st.set_page_config(page_title=f"{APP_TITLE} (v.2 ReprtPNGs)", layout="wide")
 
@@ -167,8 +170,6 @@ with st.sidebar.expander("Help", expanded=False):
     st.markdown(HELP_TEXT)
 
 # ------------------ Utilities ------------------
-def safe_df(df: Optional[pd.DataFrame]) -> bool:
-    return df is not None and isinstance(df, pd.DataFrame) and df.shape[0] > 0 and df.shape[1] > 0
 
 def show_exploration(df: pd.DataFrame, title: str):
     st.subheader(f"{title}: Exploration")
@@ -436,7 +437,6 @@ with tab_dashboard:
             else:
                 st.session_state["corr_df"] = None
 
-            st.session_state["analysis_complete"] = True
             st.caption(f"Run timestamp: {st.session_state.get('run_ts', '')}")
 
 # Reports tab
