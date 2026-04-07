@@ -361,20 +361,6 @@ with tab_dashboard:
 
             # All the rest of the dashboard renderings must come after this comment or break visualizaitons
 
-            # Front door summary (always visible)
-            st.subheader("Front door")
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric("Overall system health", health.upper())
-            kpi2.metric("Drift type", "DATA-SIDE")
-            kpi3.metric("Active severity tier", tier.upper())
-            if not drift_df.empty:
-                top = drift_df.iloc[0]
-                summary = f"Most recent drift: {top['feature']} shows {top['severity']} drift (PSI={top['psi']})."
-            else:
-                summary = "Most recent drift: none computed (check selections and inputs)."
-            kpi4.metric("Latest event summary", summary)
-            st.caption("Tip: Use the analysis methods selector in the sidebar to show only what you need.")
-
             # Cleaning log
             saved_steps = st.session_state.get("selected_steps", [])
             saved_analyses = st.session_state.get("selected_analyses", [])
@@ -394,6 +380,28 @@ with tab_dashboard:
 
             kpi4.metric("Latest event summary", summary)
             st.caption("Tip: Review the front door first, then open only the sections you need.")
+
+            st.markdown("### Quick comparison")
+
+            shared_cols = len(set(b_clean.columns).intersection(set(c_clean.columns)))
+            row_delta = len(c_clean) - len(b_clean)
+
+            if not drift_df.empty and "severity" in drift_df.columns:
+                active_drift_count = int((drift_df["severity"].str.lower() != "none").sum())
+            else:
+                active_drift_count = 0
+
+            q1, q2, q3, q4 = st.columns(4)
+            q1.metric("Baseline rows", f"{len(b_clean):,}")
+            q2.metric("Current rows", f"{len(c_clean):,}")
+            q3.metric("Row delta", f"{row_delta:+,}")
+            q4.metric("Features with drift", f"{active_drift_count:,}")
+
+            q5, q6 = st.columns(2)
+            with q5:
+                st.metric("Baseline columns", f"{b_clean.shape[1]:,}")
+            with q6:
+                st.metric("Shared columns", f"{shared_cols:,}")
 
             # Cleaning log
             with st.expander("Cleaning and preprocessing log", expanded=False):
