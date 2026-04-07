@@ -367,19 +367,35 @@ with tab_dashboard:
 
             # Front door summary (always visible)
             st.subheader("Front door")
+
+            if health.lower() == "at risk":
+                status_label = "AT RISK"
+                status_note = "Drift signals require operator review."
+            elif health.lower() == "monitor":
+                status_label = "MONITOR"
+                status_note = "Some drift signals are present. Watch for further movement."
+            elif health.lower() == "stable":
+                status_label = "STABLE"
+                status_note = "No notable drift signals detected in this run."
+            else:
+                status_label = health.upper()
+                status_note = "Review the selected analyses and underlying inputs."
+
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric("Overall system health", health.upper())
-            kpi2.metric("Drift type", "DATA-SIDE")
-            kpi3.metric("Active severity tier", tier.upper())
+            kpi1.metric("System status", status_label)
+            kpi2.metric("Signal type", "DATA-SIDE")
+            kpi3.metric("Current severity", tier.upper())
 
             if not drift_df.empty:
                 top = drift_df.iloc[0]
-                summary = f"Most recent drift: {top['feature']} shows {top['severity']} drift (PSI={top['psi']})."
+                summary = f"{top['feature']} is the leading signal with {top['severity']} drift (PSI={top['psi']})."
             else:
-                summary = "Most recent drift: none computed (check selections and inputs)."
+                summary = "No drift signal was produced in the last completed run."
 
-            kpi4.metric("Latest event summary", summary)
-            st.caption("Tip: Review the front door first, then open only the sections you need.")
+            kpi4.metric("Latest drift signal", summary)
+
+            st.info(f"Operator summary: {status_note}")
+            st.caption("Review the front door first, then open only the sections you need.")
 
             st.markdown("### Quick comparison")
 
