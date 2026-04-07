@@ -172,14 +172,14 @@ with st.sidebar.expander("Help", expanded=False):
 # ------------------ Utilities ------------------
 
 def show_exploration(df: pd.DataFrame, title: str):
-    st.subheader(f"{title}: Exploration")
+    st.markdown(f"**{title}**")
     st.write(f"Rows: **{len(df):,}** | Columns: **{df.shape[1]}**")
     st.dataframe(df.head(20), use_container_width=True)
 
     st.markdown("**Schema and missingness**")
     st.dataframe(schema_missingness(df), use_container_width=True, height=260)
 
-    st.markdown("**Descriptive statistics (numeric)**")
+    st.markdown("**Numeric profile**")
     st.dataframe(numeric_stats(df), use_container_width=True)
 
 
@@ -193,19 +193,18 @@ def fig_to_png_bytes(fig) -> bytes:
     return buf.getvalue()
 
 def show_visuals(df: pd.DataFrame, title: str):
-    st.subheader(f"{title}: Visuals")
+    st.markdown(f"**{title}**")
     num_cols = df.select_dtypes(include=["number"]).columns.tolist()
     cat_cols = df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("**Numeric**")
+        st.markdown("**Numeric view**")
         if num_cols:
             col = st.selectbox(f"{title} numeric column", num_cols, key=f"{title}_num_col")
             fig = plot_numeric_hist(df, col)
             run_id = st.session_state.get("run_id", "run")
             png_name = f"{run_id}_{title.replace(' ', '_')}_{col}_numeric.png"
-            # Render before display because clear_figure may clear the canvas
             png = fig_to_png_bytes(fig)
             st.pyplot(fig, clear_figure=True)
             st.download_button(
@@ -218,7 +217,7 @@ def show_visuals(df: pd.DataFrame, title: str):
         else:
             st.info("No numeric columns found.")
     with c2:
-        st.markdown("**Categorical**")
+        st.markdown("**Categorical view**")
         if cat_cols:
             col = st.selectbox(f"{title} categorical column", cat_cols, key=f"{title}_cat_col")
             fig = plot_categorical_bar(df, col)
@@ -420,7 +419,7 @@ with tab_dashboard:
                 st.metric("Shared columns", f"{shared_cols:,}")
 
             # Cleaning log
-            with st.expander("Cleaning and preprocessing log", expanded=False):
+            with st.expander("Processing log", expanded=False):
                 st.write("Selected steps (in order):")
                 st.write(saved_steps if saved_steps else ["(none)"])
 
@@ -452,9 +451,9 @@ with tab_dashboard:
                 if "Data quality and schema" in saved_analyses or "Descriptive statistics" in saved_analyses:
                     colA, colB = st.columns(2)
                     with colA:
-                        show_exploration(b_clean, "Baseline (post-cleaning)")
+                        show_exploration(b_clean, "Baseline data")
                     with colB:
-                        show_exploration(c_clean, "Current (post-cleaning)")
+                        show_exploration(c_clean, "Current data")
                 else:
                     st.info("Data exploration was not selected for this run.")
 
@@ -465,13 +464,13 @@ with tab_dashboard:
                 if "Visual investigation" in saved_analyses:
                     visA, visB = st.columns(2)
                     with visA:
-                        show_visuals(b_clean, "Baseline (post-cleaning)")
+                        show_visuals(b_clean, "Baseline data")
                     with visB:
-                        show_visuals(c_clean, "Current (post-cleaning)")
+                        show_visuals(c_clean, "Current data")
                     rendered_visuals = True
 
                 if "Correlation analysis (numeric)" in saved_analyses:
-                    st.markdown("**Correlation analysis (current data)**")
+                    st.markdown("**Current data correlation**")
                     corr = st.session_state.get("corr_df")
                     if corr is None or not isinstance(corr, pd.DataFrame):
                         corr = correlation_matrix(c_clean)
@@ -483,7 +482,7 @@ with tab_dashboard:
                     st.info("Visual analysis was not selected for this run.")
 
             # Comparison and outliers
-            with st.expander("Comparison and outlier review", expanded=False):
+            with st.expander("Comparison review", expanded=False):
                 rendered_detail = False
 
                 if "Baseline vs current comparison" in saved_analyses:
