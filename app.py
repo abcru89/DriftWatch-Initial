@@ -376,66 +376,112 @@ with tab_dashboard:
             st.caption("Tip: Use the analysis methods selector in the sidebar to show only what you need.")
 
             # Cleaning log
-            with st.expander("Cleaning and preprocessing log"):
+            saved_steps = st.session_state.get("selected_steps", [])
+            saved_analyses = st.session_state.get("selected_analyses", [])
+
+            # Front door summary (always visible)
+            st.subheader("Front door")
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            kpi1.metric("Overall system health", health.upper())
+            kpi2.metric("Drift type", "DATA-SIDE")
+            kpi3.metric("Active severity tier", tier.upper())
+
+            if not drift_df.empty:
+                top = drift_df.iloc[0]
+                summary = f"Most recent drift: {top['feature']} shows {top['severity']} drift (PSI={top['psi']})."
+            else:
+                summary = "Most recent drift: none computed (check selections and inputs)."
+
+            kpi4.metric("Latest event summary", summary)
+            st.caption("Tip: Review the front door first, then open only the sections you need.")
+
+            # Cleaning log
+            with st.expander("Cleaning and preprocessing log", expanded=False):
                 st.write("Selected steps (in order):")
-                st.write(selected_steps if selected_steps else ["(none)"])
+                st.write(saved_steps if saved_steps else ["(none)"])
+
                 if b_log and b_log.steps:
                     st.markdown("**Baseline log**")
                     for s in b_log.steps:
                         st.write("- " + s)
+
                 if c_log and c_log.steps:
                     st.markdown("**Current log**")
                     for s in c_log.steps:
                         st.write("- " + s)
 
-            # Analysis sections based on selection
-            if "Drift screening (PSI)" in selected_analyses:
-                st.subheader("Drift details (PSI screening)")
-                if not drift_df.empty:
-                    st.dataframe(drift_df, use_container_width=True, height=320)
-                    st.caption("Rule of thumb: PSI < 0.10 none, 0.10 to 0.25 moderate, greater than 0.25 significant (screening only).")
+            # Drift investigation
+            with st.expander("Drift investigation", expanded=False):
+                if "Drift screening (PSI)" in saved_analyses:
+                    if not drift_df.empty:
+                        st.dataframe(drift_df, use_container_width=True, height=320)
+                        st.caption(
+                            "Rule of thumb: PSI < 0.10 none, 0.10 to 0.25 moderate, greater than 0.25 significant (screening only)."
+                        )
+                    else:
+                        st.info("No drift computed. Ensure shared columns exist and data is sufficient.")
                 else:
-                    st.info("No drift computed. Ensure shared columns exist and data is sufficient.")
+                    st.info("Drift screening was not selected for this run.")
 
-            colA, colB = st.columns(2)
-
-            if "Data quality and schema" in selected_analyses or "Descriptive statistics" in selected_analyses:
-                with colA:
-                    if "Data quality and schema" in selected_analyses or "Descriptive statistics" in selected_analyses:
+            # Data exploration
+            with st.expander("Data exploration", expanded=False):
+                if "Data quality and schema" in saved_analyses or "Descriptive statistics" in saved_analyses:
+                    colA, colB = st.columns(2)
+                    with colA:
                         show_exploration(b_clean, "Baseline (post-cleaning)")
-                with colB:
-                    if "Data quality and schema" in selected_analyses or "Descriptive statistics" in selected_analyses:
+                    with colB:
                         show_exploration(c_clean, "Current (post-cleaning)")
+                else:
+                    st.info("Data exploration was not selected for this run.")
 
-            if "Visual investigation" in selected_analyses:
-                with colA:
-                    show_visuals(b_clean, "Baseline (post-cleaning)")
-                with colB:
-                    show_visuals(c_clean, "Current (post-cleaning)")
+            # Visual analysis
+            with st.expander("Visual analysis", expanded=False):
+                rendered_visuals = False
 
-            if "Baseline vs current comparison" in selected_analyses:
-                st.subheader("Baseline vs current comparison")
-                comp = compare_baseline_current(b_clean, c_clean)
-                st.session_state["compare_df"] = comp
-                st.dataframe(comp, use_container_width=True, height=320)
-            else:
-                st.session_state["compare_df"] = None
+                if "Visual investigation" in saved_analyses:
+                    visA, visB = st.columns(2)
+                    with visA:
+                        show_visuals(b_clean, "Baseline (post-cleaning)")
+                    with visB:
+                        show_visuals(c_clean, "Current (post-cleaning)")
+                    rendered_visuals = True
 
-            if "Outlier summary (IQR)" in selected_analyses:
-                st.subheader("Outlier summary (IQR)")
-                out_df = outlier_summary_iqr(c_clean, k=iqr_k)
-                st.session_state["outlier_df"] = out_df
-                st.dataframe(out_df, use_container_width=True, height=260)
-            else:
-                st.session_state["outlier_df"] = None
+                if "Correlation analysis (numeric)" in saved_analyses:
+                    st.markdown("**Correlation analysis (current data)**")
+                    corr = st.session_state.get("corr_df")
+                    if corr is None or not isinstance(corr, pd.DataFrame):
+                        corr = correlation_matrix(c_clean)
+                        st.session_state["corr_df"] = corr
+                    plot_corr_heatmap(corr, "Current data correlation matrix")
+                    rendered_visuals = True
 
-            if "Correlation analysis (numeric)" in selected_analyses:
-                st.subheader("Correlation analysis (numeric)")
-                corr = correlation_matrix(c_clean)
-                st.session_state["corr_df"] = corr
-                plot_corr_heatmap(corr, "Current data correlation matrix")
-            else:
-                st.session_state["corr_df"] = None
+                if not rendered_visuals:
+                    st.info("Visual analysis was not selected for this run.")
+
+            # Comparison and outliers
+            with st.expander("Comparison and outlier review", expanded=False):
+                rendered_detail = False
+
+                if "Baseline vs current comparison" in saved_analyses:
+                    st.markdown("**Baseline vs current comparison**")
+                    comp = st.session_state.get("compare_df")
+                    if comp is None or not isinstance(comp, pd.DataFrame):
+                        comp = compare_baseline_current(b_clean, c_clean)
+                        st.session_state["compare_df"] = comp
+                    st.dataframe(comp, use_container_width=True, height=320)
+                    rendered_detail = True
+
+                if "Outlier summary (IQR)" in saved_analyses:
+                    st.markdown("**Outlier summary (IQR)**")
+                    out_df = st.session_state.get("outlier_df")
+                    if out_df is None or not isinstance(out_df, pd.DataFrame):
+                        out_df = outlier_summary_iqr(c_clean, k=iqr_k)
+                        st.session_state["outlier_df"] = out_df
+                    st.dataframe(out_df, use_container_width=True, height=260)
+                    rendered_detail = True
+
+                if not rendered_detail:
+                    st.info("Comparison and outlier review were not selected for this run.")
 
             st.caption(f"Run timestamp: {st.session_state.get('run_ts', '')}")
 
