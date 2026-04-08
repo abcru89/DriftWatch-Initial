@@ -616,6 +616,47 @@ with tab_reports:
         b_schema = schema_missingness(b_clean)
         c_schema = schema_missingness(c_clean)
 
+        corr_df = st.session_state.get("corr_df")
+        top_corr_df = (
+            top_correlation_pairs(corr_df, top_n=5)
+            if isinstance(corr_df, pd.DataFrame) and not corr_df.empty
+            else None
+        )
+
+        if health.lower() == "at risk":
+            operator_summary = "Drift signals require operator review."
+        elif health.lower() == "monitor":
+            operator_summary = "Some drift signals are present. Watch for further movement."
+        elif health.lower() == "stable":
+            operator_summary = "No notable drift signals detected in this run."
+        else:
+            operator_summary = "Review the selected analyses and underlying inputs."
+
+        _, recommended_action = get_operator_recommendation(health, tier, drift_df)
+
+        if not drift_df.empty:
+            top = drift_df.iloc[0]
+            latest_drift_signal = f"{top['feature']} is the leading signal with {top['severity']} drift (PSI={top['psi']})."
+        else:
+            latest_drift_signal = "No drift signal was produced in the last completed run."
+
+        shared_cols = len(set(b_clean.columns).intersection(set(c_clean.columns)))
+        row_delta = len(c_clean) - len(b_clean)
+
+        if not drift_df.empty and "severity" in drift_df.columns:
+            active_drift_count = int((drift_df["severity"].astype(str).str.lower() != "none").sum())
+        else:
+            active_drift_count = 0
+
+        quick_compare = {
+            "baseline_rows": len(b_clean),
+            "current_rows": len(c_clean),
+            "row_delta": row_delta,
+            "baseline_columns": b_clean.shape[1],
+            "shared_columns": shared_cols,
+            "features_with_drift": active_drift_count,
+        }
+
         report_md = build_markdown_report(
             run_id=run_id,
             timestamp_iso=timestamp_iso,
@@ -626,6 +667,11 @@ with tab_reports:
             overall_health=health,
             severity_tier=tier,
             drift_df=drift_df,
+            operator_summary=operator_summary,
+            recommended_action=recommended_action,
+            latest_drift_signal=latest_drift_signal,
+            quick_compare=quick_compare,
+            top_corr_df=top_corr_df,
             baseline_schema=b_schema,
             current_schema=c_schema,
             compare_df=compare_df,
@@ -639,10 +685,19 @@ with tab_reports:
         base_name = f"driftwatch_report_{run_id}"
         if st.button("Save report bundle to outputs folder"):
             extras = {}
+            
             if compare_df is not None and isinstance(compare_df, pd.DataFrame) and not compare_df.empty:
                 extras["comparison"] = compare_df
             if outlier_df is not None and isinstance(outlier_df, pd.DataFrame) and not outlier_df.empty:
                 extras["outliers"] = outlier_df
+
+            quick_compare_df = pd.DataFrame([quick_compare])
+            if not quick_compare_df.empty:
+                extras["quick_comparison"] = quick_compare_df
+
+            if top_corr_df is not None and isinstance(top_corr_df, pd.DataFrame) and not top_corr_df.empty:
+                extras["top_correlations"] = top_corr_df
+                
             artifacts = save_report_bundle(
                 output_dir=OUTPUT_DIR,
                 base_filename=base_name,
