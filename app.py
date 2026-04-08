@@ -299,6 +299,35 @@ def top_correlation_pairs(corr: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
     out = pd.DataFrame(pairs).sort_values("abs_correlation", ascending=False).head(top_n)
     return out[["feature_a", "feature_b", "correlation"]]
 
+def get_operator_recommendation(health: str, tier: str, drift_df: pd.DataFrame) -> tuple[str, str]:
+    health_l = (health or "").lower()
+    tier_l = (tier or "").lower()
+
+    if not drift_df.empty and "feature" in drift_df.columns:
+        top_feature = str(drift_df.iloc[0]["feature"])
+    else:
+        top_feature = "the leading feature"
+
+    if health_l == "at risk" or tier_l == "significant":
+        return (
+            "high",
+            f"Recommended action: Investigate {top_feature} first, validate whether the shift is expected, and consider retraining or threshold review if business impact is confirmed."
+        )
+    elif health_l == "monitor" or tier_l == "moderate":
+        return (
+            "medium",
+            f"Recommended action: Monitor {top_feature} closely, review recent data changes, and watch for continued movement in the next run."
+        )
+    elif health_l == "stable" or tier_l == "none":
+        return (
+            "low",
+            "Recommended action: No immediate intervention is needed. Continue routine monitoring and review only if new signals appear."
+        )
+    else:
+        return (
+            "info",
+            "Recommended action: Review the selected analyses and inputs, then rerun if needed to confirm the current state."
+        )
 # ------------------ Main UI ------------------
 tab_dashboard, tab_reports, tab_help, tab_testing = st.tabs(["Dashboard", "Reports", "Help", "Testing"])
 
@@ -432,6 +461,18 @@ with tab_dashboard:
             kpi4.metric("Latest drift signal", summary)
 
             st.info(f"Operator summary: {status_note}")
+
+            action_level, action_text = get_operator_recommendation(health, tier, drift_df)
+
+            if action_level == "high":
+                st.error(action_text)
+            elif action_level == "medium":
+                st.warning(action_text)
+            elif action_level == "low":
+                st.success(action_text)
+            else:
+                st.info(action_text)
+
             st.caption("Review the front door first, then open only the sections you need.")
 
             st.markdown("### Quick comparison")
