@@ -242,20 +242,23 @@ def plot_corr_heatmap(corr: pd.DataFrame, title: str):
         st.info("Correlation matrix is not available (need at least 2 numeric columns).")
         return
 
-    fig_width = min(10, max(6, len(corr.columns) * 0.6))
-    fig_height = min(7, max(4, len(corr.columns) * 0.45))
+    n = len(corr.columns)
+
+    # Keep the figure intentionally compact
+    fig_width = min(6.5, max(4.5, n * 0.45))
+    fig_height = min(4.0, max(3.0, n * 0.35))
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    im = ax.imshow(corr.values, aspect="auto")
+    im = ax.imshow(corr.values, aspect="equal", interpolation="nearest")
 
-    ax.set_title(title, fontsize=12)
-    ax.set_xticks(range(len(corr.columns)))
-    ax.set_yticks(range(len(corr.columns)))
-    ax.set_xticklabels(corr.columns, rotation=45, ha="right", fontsize=8)
-    ax.set_yticklabels(corr.columns, fontsize=8)
+    ax.set_title(title, fontsize=11, pad=10)
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(corr.columns, rotation=45, ha="right", fontsize=7)
+    ax.set_yticklabels(corr.columns, fontsize=7)
 
-    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=8)
+    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02)
+    cbar.ax.tick_params(labelsize=7)
 
     fig.tight_layout()
 
@@ -263,14 +266,17 @@ def plot_corr_heatmap(corr: pd.DataFrame, title: str):
     png_name = f"{run_id}_correlation_heatmap.png"
     png = fig_to_png_bytes(fig)
 
-    st.pyplot(fig, clear_figure=True)
-    st.download_button(
-        "Download correlation heatmap (PNG)",
-        data=png,
-        file_name=png_name,
-        mime="image/png",
-        key=f"dl_corr_{run_id}",
-    )
+    # Render it in a narrower center column so it does not take over the page
+    left, center, right = st.columns([1, 2, 1])
+    with center:
+        st.pyplot(fig, clear_figure=True)
+        st.download_button(
+            "Download correlation heatmap (PNG)",
+            data=png,
+            file_name=png_name,
+            mime="image/png",
+            key=f"dl_corr_{run_id}",
+        )
 
 
 # ------------------ Main UI ------------------
@@ -487,7 +493,7 @@ with tab_dashboard:
                     if corr is None or not isinstance(corr, pd.DataFrame):
                         corr = correlation_matrix(c_clean)
                         st.session_state["corr_df"] = corr
-                    plot_corr_heatmap(corr, "Current data correlation matrix")
+                    plot_corr_heatmap(corr, "Correlation heatmap")
                     rendered_visuals = True
 
                 if not rendered_visuals:
