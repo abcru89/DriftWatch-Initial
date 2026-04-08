@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass
 from typing import Optional
+from typing import Dict
 from urllib.parse import urlparse
+from azure.storage.blob import ContentSettings
 
 import pandas as pd
 import requests
@@ -88,3 +91,76 @@ def load_csv_from_upload(uploaded_file) -> LoadResult:
         return LoadResult(df=_read_csv_bytes(b), error=None, source="file")
     except Exception as e:
         return LoadResult(df=None, error=f"Failed to read uploaded CSV: {e}", source="file")
+
+def _get_blob_service_client():
+    from azure.storage.blob import BlobServiceClient
+
+    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if not conn_str:
+        raise RuntimeError(
+            "AZURE_STORAGE_CONNECTION_STRING is not set. Add it to .streamlit/secrets.toml and restart Streamlit."
+        )
+
+    return BlobServiceClient.from_connection_string(conn_str)
+
+
+def _get_container_name() -> str:
+    return os.getenv("AZURE_STORAGE_CONTAINER", "driftwatch-artifacts")
+
+
+def upload_text_to_blob(
+    text: str,
+    blob_name: str,
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+    overwrite: bool = True,
+    metadata: Optional[dict[str, str]] = None,
+) -> str:
+    from azure.storage.blob import ContentSettings
+
+    service = _get_blob_service_client()
+    container_name = _get_container_name()
+    container = service.get_container_client(container_name)
+
+    try:
+        container.create_container()
+    except Exception:
+        pass
+
+    blob = container.get_blob_client(blob_name)
+    blob.upload_blob(
+        text.encode("utf-8"),
+        overwrite=overwrite,
+        content_settings=ContentSettings(content_type=content_type),
+        metadata=metadata,
+    )
+    return blob.url
+
+
+def upload_bytes_to_blob(
+    data: bytes,
+    blob_name: str,
+    *,
+    content_type: str = "application/octet-stream",
+    overwrite: bool = True,
+    metadata: Optional[dict[str, str]] = None,
+) -> str:
+    from azure.storage.blob import ContentSettings
+
+    service = _get_blob_service_client()
+    container_name = _get_container_name()
+    container = service.get_container_client(container_name)
+
+    try:
+        container.create_container()
+    except Exception:
+        pass
+
+    blob = container.get_blob_client(blob_name)
+    blob.upload_blob(
+        data,
+        overwrite=overwrite,
+        content_settings=ContentSettings(content_type=content_type),
+        metadata=metadata,
+    )
+    return blob.url

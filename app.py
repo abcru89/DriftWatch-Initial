@@ -10,7 +10,13 @@ import streamlit as st
 
 from driftwatch.cleaning import apply_cleaning_pipeline
 from driftwatch.drift import compute_feature_drift, overall_health
-from driftwatch.io import load_csv_from_upload, load_csv_from_url, load_csv_from_path
+from driftwatch.io import (
+    load_csv_from_upload,
+    load_csv_from_url,
+    load_csv_from_path,
+    upload_text_to_blob,
+    upload_bytes_to_blob,
+)
 from driftwatch.viz import plot_categorical_bar, plot_numeric_hist
 from driftwatch.analysis import (
     schema_missingness,
@@ -682,10 +688,16 @@ with tab_reports:
         st.markdown(report_md)
 
         st.markdown("#### Save artifacts to file")
+
         base_name = f"driftwatch_report_{run_id}"
+        archive_to_azure = st.checkbox("Also archive report artifacts to Azure Blob Storage", value=False)
+
+        if archive_to_azure:
+            st.caption("Azure archival will run after the local outputs folder save completes.")
+
         if st.button("Save report bundle to outputs folder"):
             extras = {}
-            
+
             if compare_df is not None and isinstance(compare_df, pd.DataFrame) and not compare_df.empty:
                 extras["comparison"] = compare_df
             if outlier_df is not None and isinstance(outlier_df, pd.DataFrame) and not outlier_df.empty:
@@ -697,7 +709,7 @@ with tab_reports:
 
             if top_corr_df is not None and isinstance(top_corr_df, pd.DataFrame) and not top_corr_df.empty:
                 extras["top_correlations"] = top_corr_df
-                
+
             artifacts = save_report_bundle(
                 output_dir=OUTPUT_DIR,
                 base_filename=base_name,
@@ -705,8 +717,71 @@ with tab_reports:
                 drift_df=drift_df if isinstance(drift_df, pd.DataFrame) else pd.DataFrame(),
                 extra_tables=extras if extras else None,
             )
-            st.success("Saved report artifacts.")
+
+            st.success("Saved report artifacts locally.")
             st.session_state["saved_artifacts"] = artifacts
+
+            if archive_to_azure:
+                try:
+                    prefix = f"runs/{run_id}"
+                    azure_urls = {}
+
+                    azure_urls["report_md"] = upload_text_to_blob(
+                        report_md,
+                        f"{prefix}/{base_name}.md",
+                        content_type="text/markdown; charset=utf-8",
+                        metadata={"run_id": run_id, "artifact": "report_markdown"},
+                    )
+
+                    if isinstance(drift_df, pd.DataFrame) and not drift_df.empty:
+                        azure_urls["drift_csv"] = upload_bytes_to_blob(
+                            drift_df.to_csv(index=False).encode("utf-8"),
+                            f"{prefix}/{base_name}_drift.csv",
+                            content_type="text/csv; charset=utf-8",
+                            metadata={"run_id": run_id, "artifact": "drift_csv"},
+                        )
+
+                    if compare_df is not None and isinstance(compare_df, pd.DataFrame) and not compare_df.empty:
+                        azure_urls["comparison_csv"] = upload_bytes_to_blob(
+                            compare_df.to_csv(index=False).encode("utf-8"),
+                            f"{prefix}/{base_name}_comparison.csv",
+                            content_type="text/csv; charset=utf-8",
+                            metadata={"run_id": run_id, "artifact": "comparison_csv"},
+                        )
+
+                    if outlier_df is not None and isinstance(outlier_df, pd.DataFrame) and not outlier_df.empty:
+                        azure_urls["outliers_csv"] = upload_bytes_to_blob(
+                            outlier_df.to_csv(index=False).encode("utf-8"),
+                            f"{prefix}/{base_name}_outliers.csv",
+                            content_type="text/csv; charset=utf-8",
+                            metadata={"run_id": run_id, "artifact": "outliers_csv"},
+                        )
+
+                    if top_corr_df is not None and isinstance(top_corr_df, pd.DataFrame) and not top_corr_df.empty:
+                        azure_urls["top_correlations_csv"] = upload_bytes_to_blob(
+                            top_corr_df.to_csv(index=False).encode("utf-8"),
+                            f"{prefix}/{base_name}_top_correlations.csv",
+                            content_type="text/csv; charset=utf-8",
+                            metadata={"run_id": run_id, "artifact": "top_correlations_csv"},
+                        )
+
+                    if not quick_compare_df.empty:
+                        azure_urls["quick_comparison_csv"] = upload_bytes_to_blob(
+                            quick_compare_df.to_csv(index=False).encode("utf-8"),
+                            f"{prefix}/{base_name}_quick_comparison.csv",
+                            content_type="text/csv; charset=utf-8",
+                            metadata={"run_id": run_id, "artifact": "quick_comparison_csv"},
+                        )
+
+                    st.session_state["azure_artifacts"] = azure_urls
+                    st.success("Azure Blob archival completed.")
+
+                    with st.expander("Azure artifact locations", expanded=False):
+                        for name, url in azure_urls.items():
+                            st.write(f"{name}: {url}")
+
+                except Exception as e:
+                    st.error(f"Azure archival failed: {e}")
 
         # Downloads
         st.download_button(
