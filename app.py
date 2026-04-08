@@ -237,20 +237,32 @@ def show_visuals(df: pd.DataFrame, title: str):
 
 def plot_corr_heatmap(corr: pd.DataFrame, title: str):
     import matplotlib.pyplot as plt
+
     if corr.empty:
         st.info("Correlation matrix is not available (need at least 2 numeric columns).")
         return
-    fig, ax = plt.subplots()
-    im = ax.imshow(corr.values)
-    ax.set_title(title)
+
+    fig_width = min(10, max(6, len(corr.columns) * 0.6))
+    fig_height = min(7, max(4, len(corr.columns) * 0.45))
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    im = ax.imshow(corr.values, aspect="auto")
+
+    ax.set_title(title, fontsize=12)
     ax.set_xticks(range(len(corr.columns)))
     ax.set_yticks(range(len(corr.columns)))
-    ax.set_xticklabels(corr.columns, rotation=45, ha="right")
-    ax.set_yticklabels(corr.columns)
+    ax.set_xticklabels(corr.columns, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(corr.columns, fontsize=8)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=8)
+
     fig.tight_layout()
+
     run_id = st.session_state.get("run_id", "run")
     png_name = f"{run_id}_correlation_heatmap.png"
     png = fig_to_png_bytes(fig)
+
     st.pyplot(fig, clear_figure=True)
     st.download_button(
         "Download correlation heatmap (PNG)",
