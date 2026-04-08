@@ -278,6 +278,26 @@ def plot_corr_heatmap(corr: pd.DataFrame, title: str):
             key=f"dl_corr_{run_id}",
         )
 
+def top_correlation_pairs(corr: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
+    if corr.empty or len(corr.columns) < 2:
+        return pd.DataFrame(columns=["feature_a", "feature_b", "correlation"])
+
+    pairs = []
+    cols = list(corr.columns)
+
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            pairs.append(
+                {
+                    "feature_a": cols[i],
+                    "feature_b": cols[j],
+                    "correlation": corr.iloc[i, j],
+                    "abs_correlation": abs(corr.iloc[i, j]),
+                }
+            )
+
+    out = pd.DataFrame(pairs).sort_values("abs_correlation", ascending=False).head(top_n)
+    return out[["feature_a", "feature_b", "correlation"]]
 
 # ------------------ Main UI ------------------
 tab_dashboard, tab_reports, tab_help, tab_testing = st.tabs(["Dashboard", "Reports", "Help", "Testing"])
@@ -493,6 +513,13 @@ with tab_dashboard:
                     if corr is None or not isinstance(corr, pd.DataFrame):
                         corr = correlation_matrix(c_clean)
                         st.session_state["corr_df"] = corr
+                    
+                    top_corr = top_correlation_pairs(corr, top_n=5)
+
+                    if not top_corr.empty:
+                        st.markdown("**Top correlation pairs**")
+                        st.dataframe(top_corr, use_container_width=True, height=210)
+
                     plot_corr_heatmap(corr, "Correlation heatmap")
                     rendered_visuals = True
 
