@@ -11,6 +11,7 @@ env/
 
 # Streamlit
 .streamlit/
+.streamlit/secrets.toml
 
 # OS / editor
 .DS_Store
@@ -26,3 +27,4 @@ reports/
 # Secrets (do NOT commit)
 secrets.toml
 .env
+.streamlit/secrets.toml
