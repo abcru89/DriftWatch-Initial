@@ -1,8 +1,7 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -14,10 +13,12 @@ class FeatureDrift:
     psi: float
     kind: str  # "numeric" or "categorical"
     severity: str  # "none", "moderate", "significant"
+    test_used: str
+    p_value: float
+    validated_drift: str  # "yes", "no", "unavailable"
 
 
 def _severity(psi: float) -> str:
-    # Common rule of thumb thresholds for PSI
     if psi < 0.10:
         return "none"
     if psi < 0.25:
@@ -25,16 +26,13 @@ def _severity(psi: float) -> str:
     return "significant"
 
 
-def psi_numeric(expected: pd.Series, actual: pd.Series, bins: int = 10, eps: float = 1e-6) -> float:
-    """
-    Population Stability Index (PSI) for numeric variables.
+def _validated_label(p_value: float, alpha: float = 0.05) -> str:
+    if pd.isna(p_value):
+        return "unavailable"
+    return "yes" if p_value < alpha else "no"
 
-    Notes:
-    - Bin edges are derived from the expected (baseline) distribution.
-    - Edges are extended to (-inf, +inf) so actual values outside the baseline range
-      still land in a valid bin (avoids NaN bins from out-of-range values).
-    - Distributions are aligned by index before computing PSI to prevent shape mismatches.
-    """
+
+def psi_numeric(expected: pd.Series, actual: pd.Series, bins: int = 10, eps: float = 1e-6) -> float:
     e = expected.dropna().astype(float)
     a = actual.dropna().astype(float)
     if len(e) < 2 or len(a) < 2:
@@ -88,43 +86,97 @@ def psi_categorical(expected: pd.Series, actual: pd.Series, eps: float = 1e-6) -
     return float(psi)
 
 
+def validate_numeric_ks(expected: pd.Series, actual: pd.Series) -> Tuple[str, float]:
+    e = expected.dropna().astype(float).to_numpy()
+    a = actual.dropna().astype(float).to_numpy()
+
+    if len(e) < 2 or len(a) < 2:
+        return ("ks_2samp", float("nan"))
+
+    try:
+        from scipy.stats import ks_2samp
+        res = ks_2samp(e, a, alternative="two-sided", method="auto")
+        return ("ks_2samp", float(res.pvalue))
+    except Exception:
+        return ("ks_2samp", float("nan"))
+
+
+def validate_categorical_chi2(expected: pd.Series, actual: pd.Series) -> Tuple[str, float]:
+    e = expected.fillna("<<MISSING>>").astype(str)
+    a = actual.fillna("<<MISSING>>").astype(str)
+
+    cats = sorted(set(e.unique()).union(set(a.unique())))
+    if len(cats) < 2:
+        return ("chi2_contingency", float("nan"))
+
+    e_counts = e.value_counts().reindex(cats, fill_value=0)
+    a_counts = a.value_counts().reindex(cats, fill_value=0)
+    observed = np.vstack([e_counts.values, a_counts.values])
+
+    if observed.sum() == 0:
+        return ("chi2_contingency", float("nan"))
+
+    try:
+        from scipy.stats.contingency import chi2_contingency
+        _, p_value, _, _ = chi2_contingency(observed, correction=False)
+        return ("chi2_contingency", float(p_value))
+    except Exception:
+        return ("chi2_contingency", float("nan"))
+
+
 def compute_feature_drift(
     baseline: pd.DataFrame,
     current: pd.DataFrame,
     max_features: int = 50,
+    alpha: float = 0.05,
 ) -> List[FeatureDrift]:
-    """
-    Compute PSI for shared columns between baseline and current.
-    Returns a list sorted by PSI descending (worst drift first).
-    """
     features = [c for c in baseline.columns if c in current.columns][:max_features]
     out: List[FeatureDrift] = []
 
     for c in features:
         b = baseline[c]
         k = "numeric" if pd.api.types.is_numeric_dtype(b) else "categorical"
+
         if k == "numeric":
-            val = psi_numeric(b, current[c])
+            psi_val = psi_numeric(b, current[c])
+            test_used, p_value = validate_numeric_ks(b, current[c])
         else:
-            val = psi_categorical(b, current[c])
-        if np.isnan(val):
+            psi_val = psi_categorical(b, current[c])
+            test_used, p_value = validate_categorical_chi2(b, current[c])
+
+        if np.isnan(psi_val):
             continue
-        out.append(FeatureDrift(feature=c, psi=val, kind=k, severity=_severity(val)))
+
+        out.append(
+            FeatureDrift(
+                feature=c,
+                psi=psi_val,
+                kind=k,
+                severity=_severity(psi_val),
+                test_used=test_used,
+                p_value=p_value,
+                validated_drift=_validated_label(p_value, alpha=alpha),
+            )
+        )
 
     out.sort(key=lambda x: x.psi, reverse=True)
     return out
 
 
 def overall_health(drift_list: List[FeatureDrift]) -> Tuple[str, str]:
-    """
-    Returns (health_indicator, tier) where tier is the worst severity present.
-    """
     if not drift_list:
         return ("unknown", "unknown")
 
     worst = drift_list[0].severity
-    if worst == "significant":
+    validated = [d for d in drift_list if d.validated_drift == "yes"]
+
+    if any(d.severity == "significant" for d in validated):
         return ("at risk", "significant")
-    if worst == "moderate":
-        return ("watch", "moderate")
-    return ("ok", "none")
+
+    if any(d.severity in {"moderate", "significant"} for d in validated):
+        return ("monitor", "moderate")
+
+    if worst in {"moderate", "significant"}:
+        return ("monitor", worst)
+
+    return ("stable", "none")

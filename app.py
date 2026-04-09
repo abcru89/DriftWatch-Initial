@@ -311,15 +311,22 @@ def get_operator_recommendation(health: str, tier: str, drift_df: pd.DataFrame) 
 
     if not drift_df.empty and "feature" in drift_df.columns:
         top_feature = str(drift_df.iloc[0]["feature"])
+        top_validated = str(drift_df.iloc[0].get("validated_drift", "unavailable")).lower()
     else:
         top_feature = "the leading feature"
+        top_validated = "unavailable"
 
-    if health_l == "at risk" or tier_l == "significant":
+    if health_l == "at risk" and top_validated == "yes":
         return (
             "high",
-            f"Recommended action: Investigate {top_feature} first, validate whether the shift is expected, and consider retraining or threshold review if business impact is confirmed."
+            f"Recommended action: Investigate {top_feature} first. This signal is both operationally material and statistically validated, so confirm whether the shift is expected and consider retraining or threshold review if business impact is confirmed."
         )
-    elif health_l == "monitor" or tier_l == "moderate":
+    elif tier_l in {"significant", "moderate"} and top_validated == "no":
+        return (
+            "medium",
+            f"Recommended action: {top_feature} triggered a PSI screening signal, but it was not statistically validated. Monitor the feature, review recent data changes, and escalate only if the signal persists."
+        )
+    elif health_l == "monitor":
         return (
             "medium",
             f"Recommended action: Monitor {top_feature} closely, review recent data changes, and watch for continued movement in the next run."
@@ -334,6 +341,8 @@ def get_operator_recommendation(health: str, tier: str, drift_df: pd.DataFrame) 
             "info",
             "Recommended action: Review the selected analyses and inputs, then rerun if needed to confirm the current state."
         )
+    
+
 # ------------------ Main UI ------------------
 tab_dashboard, tab_reports, tab_help, tab_testing = st.tabs(["Dashboard", "Reports", "Help", "Testing"])
 
@@ -394,6 +403,9 @@ with tab_dashboard:
                             "kind": d.kind,
                             "psi": round(d.psi, 6),
                             "severity": d.severity,
+                            "test_used": d.test_used,
+                            "p_value": round(d.p_value, 6) if pd.notna(d.p_value) else None,
+                            "validated_drift": d.validated_drift,
                         }
                         for d in drift_list
                     ])
@@ -460,7 +472,23 @@ with tab_dashboard:
 
             if not drift_df.empty:
                 top = drift_df.iloc[0]
-                summary = f"{top['feature']} is the leading signal with {top['severity']} drift (PSI={top['psi']})."
+                if top.get("validated_drift") == "yes" and pd.notna(top.get("p_value")):
+                    summary = (
+                        f"{top['feature']} is the leading signal with {top['severity']} drift "
+                        f"(PSI={top['psi']}). Statistically validated by {top['test_used']} "
+                        f"(p={top['p_value']})."
+                    )
+                elif top.get("validated_drift") == "no" and pd.notna(top.get("p_value")):
+                    summary = (
+                        f"{top['feature']} is the leading signal with {top['severity']} drift "
+                        f"(PSI={top['psi']}). Screening signal only; not statistically validated "
+                        f"({top['test_used']} p={top['p_value']})."
+                    )
+                else:
+                    summary = (
+                        f"{top['feature']} is the leading signal with {top['severity']} drift "
+                        f"(PSI={top['psi']}). Statistical validation unavailable."
+                    )
             else:
                 summary = "No drift signal was produced in the last completed run."
 
@@ -487,9 +515,14 @@ with tab_dashboard:
             row_delta = len(c_clean) - len(b_clean)
 
             if not drift_df.empty and "severity" in drift_df.columns:
-                active_drift_count = int((drift_df["severity"].str.lower() != "none").sum())
+                active_drift_count = int((drift_df["severity"].astype(str).str.lower() != "none").sum())
             else:
                 active_drift_count = 0
+
+            if not drift_df.empty and "validated_drift" in drift_df.columns:
+                validated_drift_count = int((drift_df["validated_drift"].astype(str).str.lower() == "yes").sum())
+            else:
+                validated_drift_count = 0
 
             q1, q2, q3, q4 = st.columns(4)
             q1.metric("Baseline rows", f"{len(b_clean):,}")
@@ -497,11 +530,13 @@ with tab_dashboard:
             q3.metric("Row delta", f"{row_delta:+,}")
             q4.metric("Features with drift", f"{active_drift_count:,}")
 
-            q5, q6 = st.columns(2)
+            q5, q6, q7 = st.columns(3)
             with q5:
                 st.metric("Baseline columns", f"{b_clean.shape[1]:,}")
             with q6:
                 st.metric("Shared columns", f"{shared_cols:,}")
+            with q7:
+                st.metric("Validated drift", f"{validated_drift_count:,}")
 
             # Cleaning log
             with st.expander("Processing log", expanded=False):
@@ -524,7 +559,7 @@ with tab_dashboard:
                     if not drift_df.empty:
                         st.dataframe(drift_df, use_container_width=True, height=320)
                         st.caption(
-                            "Rule of thumb: PSI < 0.10 none, 0.10 to 0.25 moderate, greater than 0.25 significant (screening only)."
+                            "PSI is the screening layer. Numeric features are additionally checked with a KS test, and categorical features are additionally checked with a chi-square test."
                         )
                     else:
                         st.info("No drift computed. Ensure shared columns exist and data is sufficient.")
@@ -654,6 +689,11 @@ with tab_reports:
         else:
             active_drift_count = 0
 
+        if not drift_df.empty and "validated_drift" in drift_df.columns:
+            validated_drift_count = int((drift_df["validated_drift"].astype(str).str.lower() == "yes").sum())
+        else:
+            validated_drift_count = 0
+
         quick_compare = {
             "baseline_rows": len(b_clean),
             "current_rows": len(c_clean),
@@ -661,6 +701,7 @@ with tab_reports:
             "baseline_columns": b_clean.shape[1],
             "shared_columns": shared_cols,
             "features_with_drift": active_drift_count,
+            "validated_drift_signals": validated_drift_count,
         }
 
         report_md = build_markdown_report(

@@ -64,7 +64,7 @@ def build_markdown_report(
 
     lines.append("## Front door summary")
     lines.append(f"- System status: {overall_health}")
-    lines.append(f"- Signal type: data-side (PSI screening)")
+    lines.append(f"- Signal type: data-side (PSI screening with statistical validation)")
     lines.append(f"- Current severity: {severity_tier}")
     lines.append(f"- Latest drift signal: {latest_drift_signal}")
     lines.append(f"- Operator summary: {operator_summary}")
@@ -78,7 +78,7 @@ def build_markdown_report(
         lines.append(f"- Row delta: {quick_compare.get('row_delta', 'n/a')}")
         lines.append(f"- Baseline columns: {quick_compare.get('baseline_columns', 'n/a')}")
         lines.append(f"- Shared columns: {quick_compare.get('shared_columns', 'n/a')}")
-        lines.append(f"- Features with drift: {quick_compare.get('features_with_drift', 'n/a')}")
+        lines.append(f"- Validated drift signals: {quick_compare.get('validated_drift_signals', 'n/a')}")
         lines.append("")
 
     lines.append("## Configuration")
@@ -89,8 +89,10 @@ def build_markdown_report(
     lines.append("")
 
     lines.append("## Drift investigation")
-    lines.append("Population Stability Index (PSI) is used here as a screening signal, not a final verdict.")
+    lines.append("Population Stability Index (PSI) is the screening layer, not a final verdict.")
+    lines.append("Numeric features are additionally checked with a KS two-sample test, and categorical features are additionally checked with a chi-square test.")
     lines.append("Rule of thumb: PSI < 0.10 none, 0.10 to 0.25 moderate, greater than 0.25 significant.")
+    lines.append("Validation rule: a signal is treated as statistically validated when p < 0.05.")
     lines.append("")
 
     if drift_df.empty:
@@ -100,10 +102,19 @@ def build_markdown_report(
         significant_count = int((sev == "significant").sum()) if not sev.empty else 0
         moderate_count = int((sev == "moderate").sum()) if not sev.empty else 0
         active_count = int((sev != "none").sum()) if not sev.empty else 0
+        if "validated_drift" in drift_df.columns:
+            validated = drift_df["validated_drift"].astype(str).str.lower()
+            validated_count = int((validated == "yes").sum())
+            screening_only_count = int((validated == "no").sum())
+        else:
+            validated_count = 0
+            screening_only_count = 0
 
         lines.append(f"- Features with active drift signals: {active_count}")
         lines.append(f"- Significant drift signals: {significant_count}")
         lines.append(f"- Moderate drift signals: {moderate_count}")
+        lines.append(f"- Statistically validated drift signals: {validated_count}")
+        lines.append(f"- Screening-only drift signals: {screening_only_count}")
         lines.append("")
         lines.append("### Drift table")
         lines.append(drift_df.to_markdown(index=False))
